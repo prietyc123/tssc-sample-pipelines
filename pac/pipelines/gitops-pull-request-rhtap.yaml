@@ -35,6 +35,10 @@ spec:
       description: The TUF mirror that EC should use
       name: ec-tuf-mirror
       type: string
+    - default: tpa-secret
+      description: The name of the Secret that contains Trustification (TPA) configuration
+      name: trustification-secret-name
+      type: string
   tasks:
     - name: clone-repository
       params:
@@ -51,7 +55,7 @@ spec:
           workspace: workspace
         - name: basic-auth
           workspace: git-auth
-    - name: gather-deploy-images
+    - name: get-images-to-verify
       params:
         - name: TARGET_BRANCH
           value: $(params.target-branch)
@@ -65,7 +69,7 @@ spec:
     - name: verify-enteprise-contract
       params:
         - name: IMAGES
-          value: $(tasks.gather-deploy-images.results.IMAGES_TO_VERIFY)
+          value: $(tasks.get-images-to-verify.results.IMAGES_TO_VERIFY)
         - name: STRICT
           value: $(params.ec-strict)
         - name: POLICY_CONFIGURATION
@@ -77,11 +81,53 @@ spec:
         - name: TUF_MIRROR
           value: $(params.ec-tuf-mirror)
       runAfter:
-        - gather-deploy-images
+        - get-images-to-verify
       taskRef:
         name: verify-enterprise-contract
-      when:
-        - input: $(tasks.gather-deploy-images.results.IMAGES_TO_VERIFY)
-          operator: notin
-          values:
-            - ""
+    - name: get-images-to-upload-sbom
+      params:
+        - name: TARGET_BRANCH
+          value: $(params.target-branch)
+        - name: FROM_ENVIRONMENTS
+          value:
+            - stage
+            - prod
+      runAfter:
+        - clone-repository
+      taskRef:
+        name: gather-deploy-images
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: download-sboms
+      params:
+        - name: IMAGES
+          value: $(tasks.get-images-to-upload-sbom.results.IMAGES_TO_VERIFY)
+        - name: SBOMS_DIR
+          value: sboms
+        - name: PUBLIC_KEY
+          value: $(params.ec-public-key)
+        - name: REKOR_HOST
+          value: $(params.ec-rekor-host)
+        - name: TUF_MIRROR
+          value: $(params.ec-tuf-mirror)
+      runAfter:
+        - get-images-to-upload-sbom
+      taskRef:
+        name: download-sbom-from-url-in-attestation
+      workspaces:
+        - name: sboms
+          workspace: workspace
+    - name: upload-sboms-to-trustification
+      params:
+        - name: SBOMS_DIR
+          value: sboms
+        - name: TRUSTIFICATION_SECRET_NAME
+          value: $(params.trustification-secret-name)
+      runAfter:
+        - download-sboms
+      taskRef:
+        name: upload-sbom-to-trustification
+      workspaces:
+        - name: sboms
+          workspace: workspace
