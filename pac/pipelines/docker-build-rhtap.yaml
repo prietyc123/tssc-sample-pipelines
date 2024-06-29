@@ -244,3 +244,5 @@ spec:
     - name: workspace
     - name: git-auth
       optional: true
+    - name: netrc
+      optional: true
